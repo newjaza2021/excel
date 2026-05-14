@@ -196,22 +196,6 @@
       <span>يدعم الأداة: الروابط المختصرة <strong>maps.app.goo.gl</strong> (تُعالَج عبر خادم <strong>asaher.com</strong>)، والروابط الكاملة (تُعالَج محلياً فورياً).</span>
     </div>
 
-    <div class="section-title">ترتيب الإحداثيات في النتائج</div>
-    <div class="order-toggle">
-      <label id="lbl1" class="active">
-        <input type="radio" name="coordOrder" value="lat_lng" checked onchange="toggleLabel()">
-        📍 خط العرض أولاً (Lat, Lng)
-      </label>
-      <label id="lbl2">
-        <input type="radio" name="coordOrder" value="lng_lat" onchange="toggleLabel()">
-        🔄 خط الطول أولاً (Lng, Lat)
-      </label>
-      <label id="lbl3">
-        <input type="radio" name="coordOrder" value="separate" onchange="toggleLabel()">
-        ↔️ عمودان منفصلان
-      </label>
-    </div>
-
     <div class="section-title">أدخل الروابط (رابط في كل سطر)</div>
     <textarea id="linksInput" placeholder="الصق روابط Google Maps هنا&#10;مثال:&#10;https://maps.app.goo.gl/abc123&#10;https://www.google.com/maps/place/.../@24.7136,46.6753,17z/"></textarea>
 
@@ -253,7 +237,7 @@
           <tr>
             <th>#</th>
             <th>الرابط المُدخل</th>
-            <th id="coordHeader">الإحداثيات (Lat, Lng)</th>
+            <th id="coordHeader">الإحداثيات (خط العرض, خط الطول)</th>
             <th>الحالة</th>
             <th>نسخ</th>
           </tr>
@@ -276,19 +260,8 @@ var SCRIPT_URL = "https://asaher.com/map.php?url=";
 var processedData = [];
 
 // ======= مساعدات =======
-function toggleLabel() {
-  document.getElementById('lbl1').classList.remove('active');
-  document.getElementById('lbl2').classList.remove('active');
-  document.getElementById('lbl3').classList.remove('active');
-  var val = document.querySelector('input[name="coordOrder"]:checked').value;
-  if (val === 'lat_lng') document.getElementById('lbl1').classList.add('active');
-  else if (val === 'lng_lat') document.getElementById('lbl2').classList.add('active');
-  else document.getElementById('lbl3').classList.add('active');
-}
 
-function getOrder() {
-  return document.querySelector('input[name="coordOrder"]:checked').value;
-}
+function getOrder() { return "lat_lng"; }
 
 // استخراج الإحداثيات من الرابط الكامل (محلياً)
 function extractFromLongUrl(url) {
@@ -348,10 +321,7 @@ function startBatchProcess() {
   var order = getOrder();
 
   // تحديث ترويسة عمود الإحداثيات
-  var ch = document.getElementById('coordHeader');
-  if (order === 'lat_lng') ch.textContent = 'الإحداثيات (Lat, Lng)';
-  else if (order === 'lng_lat') ch.textContent = 'الإحداثيات (Lng, Lat)';
-  else ch.textContent = 'خط العرض | خط الطول';
+  document.getElementById('coordHeader').textContent = 'الإحداثيات (Lat, Lng)';
 
   var resultsBody = document.getElementById('resultsBody');
   resultsBody.innerHTML = '';
@@ -399,53 +369,58 @@ function startBatchProcess() {
 
     updateProgress(i);
 
-    // هل الرابط مختصر؟ نستخدم Apps Script
+    // هل الرابط مختصر؟ نستخدم asaher.com
     if (isShortUrl(url)) {
-      // حل مشكلة CORS عبر proxy وسيط
-          var targetUrl = SCRIPT_URL + encodeURIComponent(url);
-          var proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl);
+      var targetUrl = SCRIPT_URL + encodeURIComponent(url);
 
-          function parseCoords(txt) {
-            txt = (txt || '').toString().trim().replace(/[\r\n\t\s]+/g, '');
-            var parts = txt.split(',');
-            if (parts.length >= 2) {
-              var la = parseFloat(parts[0]);
-              var ln = parseFloat(parts[1]);
-              if (!isNaN(la) && !isNaN(ln)) return { lat: la, lng: ln };
-            }
-            return null;
-          }
+      function parseCoords(txt) {
+        txt = (txt || '').toString().trim().replace(/[\r\n\t\s]+/g, '');
+        var parts = txt.split(',');
+        if (parts.length >= 2) {
+          var la = parseFloat(parts[0]);
+          var ln = parseFloat(parts[1]);
+          if (!isNaN(la) && !isNaN(ln)) return { lat: la, lng: ln };
+        }
+        return null;
+      }
 
-          function tryProxy(proxyAddr) {
-            return fetch(proxyAddr)
-              .then(function(res) {
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                return res.text();
-              })
-              .then(function(data) { return parseCoords(data); });
-          }
+      function tryFetch(proxyAddr) {
+        return fetch(proxyAddr)
+          .then(function(res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.text();
+          })
+          .then(function(data) { return parseCoords(data); });
+      }
 
-          // جرّب allorigins أولاً، ثم corsproxy.io كبديل
-          tryProxy('https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl))
-            .then(function(coords) {
-              if (!coords) {
-                return tryProxy('https://corsproxy.io/?' + encodeURIComponent(targetUrl));
-              }
-              return coords;
-            })
-            .then(function(coords) {
-                  if (coords) okCount++; else errCount++;
-              doneCount++;
-              updateStats();
-              processLink(i + 1);
-            })
-            .catch(function(err) {
-              document.getElementById('coord-' + i).textContent = 'خطأ: ' + (err.message || 'فشل الاتصال');
+      var proxies = [
+        'https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl),
+        'https://corsproxy.io/?' + encodeURIComponent(targetUrl),
+        'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(targetUrl),
+        targetUrl
+      ];
+      var pIdx = 0;
+
+      function tryNext() {
+        if (pIdx >= proxies.length) {
+          document.getElementById('coord-' + i).textContent = 'فشل الاتصال';
           document.getElementById('status-' + i).innerHTML = '<span class="badge badge-err">❌ فشل</span>';
           errCount++; doneCount++;
           updateStats();
           processLink(i + 1);
-        });
+          return;
+        }
+        tryFetch(proxies[pIdx++])
+          .then(function(coords) {
+            if (!coords) { tryNext(); return; }
+            setRowResult(i, url, coords, getOrder());
+            okCount++; doneCount++;
+            updateStats();
+            processLink(i + 1);
+          })
+          .catch(function() { tryNext(); });
+      }
+      tryNext();
     } else {
       // رابط كامل: معالجة محلية فورية
       var coords = extractFromLongUrl(url);
