@@ -401,35 +401,46 @@ function startBatchProcess() {
 
     // هل الرابط مختصر؟ نستخدم Apps Script
     if (isShortUrl(url)) {
-      fetch(SCRIPT_URL + encodeURIComponent(url), {
-          method: 'GET',
-          mode: 'cors',
-          headers: { 'Accept': 'text/plain, */*' }
-        })
-        .then(function(res){
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          return res.text();
-        })
-        .then(function(data) {
-          var coords = null;
-          // asaher.com/map.php يُرجع نصاً مباشراً: "lat,lng"
-          var txt = (data || '').toString().trim();
-          // تنظيف النص من أي مسافات أو أحرف غير مرئية
-          txt = txt.replace(/[\r\n\t\s]+/g, '');
-          var parts = txt.split(',');
-          if (parts.length >= 2) {
-            var la = parseFloat(parts[0]);
-            var ln = parseFloat(parts[1]);
-            if (!isNaN(la) && !isNaN(ln)) coords = { lat: la, lng: ln };
+      // حل مشكلة CORS عبر proxy وسيط
+          var targetUrl = SCRIPT_URL + encodeURIComponent(url);
+          var proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl);
+
+          function parseCoords(txt) {
+            txt = (txt || '').toString().trim().replace(/[\r\n\t\s]+/g, '');
+            var parts = txt.split(',');
+            if (parts.length >= 2) {
+              var la = parseFloat(parts[0]);
+              var ln = parseFloat(parts[1]);
+              if (!isNaN(la) && !isNaN(ln)) return { lat: la, lng: ln };
+            }
+            return null;
           }
-          setRowResult(i, url, coords, order);
-          if (coords) okCount++; else errCount++;
-          doneCount++;
-          updateStats();
-          processLink(i + 1);
-        })
-        .catch(function(err) {
-          document.getElementById('coord-' + i).textContent = 'خطأ: ' + (err.message || 'فشل الاتصال');
+
+          function tryProxy(proxyAddr) {
+            return fetch(proxyAddr)
+              .then(function(res) {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.text();
+              })
+              .then(function(data) { return parseCoords(data); });
+          }
+
+          // جرّب allorigins أولاً، ثم corsproxy.io كبديل
+          tryProxy('https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl))
+            .then(function(coords) {
+              if (!coords) {
+                return tryProxy('https://corsproxy.io/?' + encodeURIComponent(targetUrl));
+              }
+              return coords;
+            })
+            .then(function(coords) {
+                  if (coords) okCount++; else errCount++;
+              doneCount++;
+              updateStats();
+              processLink(i + 1);
+            })
+            .catch(function(err) {
+              document.getElementById('coord-' + i).textContent = 'خطأ: ' + (err.message || 'فشل الاتصال');
           document.getElementById('status-' + i).innerHTML = '<span class="badge badge-err">❌ فشل</span>';
           errCount++; doneCount++;
           updateStats();
