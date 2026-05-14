@@ -302,11 +302,10 @@ function isShortUrl(url) {
 
 function formatCoord(coords, order) {
   if (!coords) return '';
-  var lat = coords.lat.toFixed(6);
-  var lng = coords.lng.toFixed(6);
-  if (order === 'lat_lng') return lat + ', ' + lng;
-  if (order === 'lng_lat') return lng + ', ' + lat;
-  return lat + ' | ' + lng;
+  // استخدام النص الأصلي من الخادم إن وُجد، وإلا toString()
+  var lat = coords.latStr || String(coords.lat);
+  var lng = coords.lngStr || String(coords.lng);
+  return lat + ', ' + lng;
 }
 
 // ======= المعالجة الرئيسية =======
@@ -379,7 +378,10 @@ function startBatchProcess() {
         if (parts.length >= 2) {
           var la = parseFloat(parts[0]);
           var ln = parseFloat(parts[1]);
-          if (!isNaN(la) && !isNaN(ln)) return { lat: la, lng: ln };
+          if (!isNaN(la) && !isNaN(ln)) {
+            // نحفظ النص الأصلي من الخادم مباشرة
+            return { lat: la, lng: ln, latStr: parts[0].trim(), lngStr: parts[1].trim() };
+          }
         }
         return null;
       }
